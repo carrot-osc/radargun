@@ -7,6 +7,9 @@ import java.util.regex.Pattern;
 import org.radargun.DistStageAck;
 import org.radargun.config.Property;
 import org.radargun.config.Stage;
+import org.radargun.stages.cache.generators.CacheAwareTextGenerator;
+import org.radargun.stages.cache.generators.KeyGenerator;
+import org.radargun.stages.cache.generators.StringKeyGenerator;
 import org.radargun.traits.BasicOperations;
 import org.radargun.traits.Debugable;
 
@@ -21,13 +24,17 @@ public class XSReplCheckStage extends CheckCacheDataStage {
    @Property(doc = "Postfix part of the value contents. Default is empty string.")
    private String valuePostFix = "";
 
+   @Property(doc = "Number of backup caches residing on this node. Default is not defined. " +
+         "In that case, total number of defined caches is used.")
+   private Integer numLocalBackups = null;
+
    private transient BasicOperations.Cache[] backupCaches;
    private transient Debugable.Cache[] backupDebugable;
    private transient BackupCacheValueChecker[] backupCheckers;
 
    @Override
    public DistStageAck executeOnSlave() {
-      int numBackups = slaveState.getGroupCount();
+      int numBackups = numLocalBackups != null && numLocalBackups >= 0 ? numLocalBackups : slaveState.getGroupCount();
       backupCaches = new BasicOperations.Cache[numBackups];
       backupCheckers = new BackupCacheValueChecker[numBackups];
       if (debugable != null) {
@@ -61,18 +68,37 @@ public class XSReplCheckStage extends CheckCacheDataStage {
 
    @Override
    protected int getExpectedNumEntries() {
-      return getNumEntries() * cacheInformation.getCacheNames().size();
+      int multiplier;
+      if (numLocalBackups == null) {
+         multiplier = cacheInformation.getCacheNames().size();
+      } else if (numLocalBackups == 0) {
+         multiplier = 1;
+      } else if (numLocalBackups > 0) {
+         multiplier = numLocalBackups;
+      } else {
+         throw new IllegalArgumentException("Invalid number of local backups specified. Expected value in range <0;inf), was " + numLocalBackups);
+      }
+      return getNumEntries() * multiplier;
    }
 
    private class MainCacheValueChecker implements ValueChecker {
+
+      private KeyGenerator keyGenerator;
+
+      public MainCacheValueChecker() {
+         keyGenerator = (KeyGenerator) slaveState.get(KeyGenerator.KEY_GENERATOR);
+         if (keyGenerator == null) {
+            keyGenerator = new StringKeyGenerator();
+         }
+      }
       @Override
       public boolean check(int keyIndex, Object value) {
-         return value.equals("value" + keyIndex + valuePostFix + "@" + cacheInformation.getDefaultCacheName());
+         return value.equals(String.format(CacheAwareTextGenerator.VALUE_TEMPLATE, keyGenerator.generateKey(keyIndex), valuePostFix, cacheInformation.getDefaultCacheName()));
       }
    }
 
    private class BackupCacheValueChecker implements ValueChecker {
-      private Pattern valuePattern = Pattern.compile("value(\\d*)([^@]*)@(.*)");
+      private Pattern valuePattern = Pattern.compile("value_(.*)_([^@]*)@(.*)");
       private volatile String originCache = null;
       private String cacheName;
 

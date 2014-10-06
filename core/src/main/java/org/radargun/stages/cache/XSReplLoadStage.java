@@ -4,8 +4,10 @@ import org.radargun.DistStageAck;
 import org.radargun.config.Property;
 import org.radargun.config.Stage;
 import org.radargun.stages.AbstractDistStage;
+import org.radargun.stages.cache.generators.CacheAwareTextGenerator;
 import org.radargun.stages.cache.generators.KeyGenerator;
 import org.radargun.stages.cache.generators.StringKeyGenerator;
+import org.radargun.stages.cache.generators.ValueGenerator;
 import org.radargun.stages.helpers.Range;
 import org.radargun.traits.BasicOperations;
 import org.radargun.traits.CacheInformation;
@@ -41,15 +43,20 @@ public class XSReplLoadStage extends AbstractDistStage {
       if (keyGenerator == null) {
          keyGenerator = new StringKeyGenerator();
       }
+      ValueGenerator valueGenerator = (ValueGenerator) slaveState.get(ValueGenerator.VALUE_GENERATOR);
+      if (valueGenerator == null) {
+         valueGenerator = new CacheAwareTextGenerator(cacheInformation.getDefaultCacheName(), valuePostFix);
+      }
       String cacheName = cacheInformation.getDefaultCacheName();
       BasicOperations.Cache cache = basicOperations.getCache(cacheName);
       Range myRange = Range.divideRange(numEntries, slaveState.getGroupSize(), slaveState.getIndexInGroup());
       for (int i = myRange.getStart(); i < myRange.getEnd(); ++i) {
          try {
+            Object key = keyGenerator.generateKey(i);
             if (!delete) {
-               cache.put(keyGenerator.generateKey(i), "value" + i + valuePostFix + "@" + cacheName);
+               cache.put(key, valueGenerator.generateValue(key, -1, null));
             } else {
-               cache.remove(keyGenerator.generateKey(i));
+               cache.remove(key);
             }
          } catch (Exception e) {
             log.error("Error inserting key " + i + " into " + cacheName);

@@ -21,6 +21,7 @@ import org.radargun.traits.BasicOperations;
 import org.radargun.traits.InjectTrait;
 import org.radargun.traits.Transactional;
 import org.radargun.utils.Fuzzy;
+import org.radargun.utils.TimeConverter;
 import org.radargun.utils.Utils;
 
 /**
@@ -79,6 +80,9 @@ public class LoadDataStage extends AbstractDistStage {
    @Property(doc = "Numbers of entries loaded in one transaction. Default is to not use transactions.")
    protected int transactionSize = 0;
 
+   @Property(converter = TimeConverter.class, doc = "Specifies period which separates individual write operations. Default is 0.")
+   protected long delayBetweenRequests = 0;
+
    @InjectTrait(dependency = InjectTrait.Dependency.MANDATORY)
    protected BasicOperations basicOperations;
 
@@ -112,6 +116,18 @@ public class LoadDataStage extends AbstractDistStage {
       slaveState.put(CacheSelector.CACHE_SELECTOR, cacheSelector);
       slaveState.addServiceListener(new Unregistrar(slaveState));
 
+      List<Loader> loaders = startLoaders();
+      try {
+         stopLoaders(loaders);
+      } catch (InterruptedException e) {
+         return errorResponse("Interrupted when waiting for the loader to finish");
+      } catch (Exception e) {
+         return errorResponse("Loader failed with exception", e);
+      }
+      return successfulResponse();
+   }
+
+   protected List<Loader> startLoaders() {
       int threadBase = getExecutingSlaveIndex() * numThreads;
       List<Loader> loaders = new ArrayList<>();
       for (int i = 0; i < numThreads; ++i) {
@@ -127,17 +143,16 @@ public class LoadDataStage extends AbstractDistStage {
          loaders.add(loader);
          loader.start(); // no special synchronization needed
       }
+      return loaders;
+   }
+
+   protected void stopLoaders(List<Loader> loaders) throws Exception {
       for (Loader loader : loaders) {
-         try {
-            loader.join();
-         } catch (InterruptedException e) {
-            return errorResponse("Interrupted when waiting for the loader to finish");
-         }
+         loader.join();
          if (loader.getException() != null) {
-            return errorResponse("Loader failed with exception", loader.getException());
+            throw loader.getException();
          }
       }
-      return successfulResponse();
    }
 
    private LoaderIds getLoaderIds(int index) {
@@ -184,7 +199,7 @@ public class LoadDataStage extends AbstractDistStage {
       }
    }
 
-   private abstract class Loader extends Thread {
+   public abstract class Loader extends Thread {
       protected final Random random;
       protected final int threadIndex;
       protected final LoaderIds loaderIds;
@@ -243,6 +258,8 @@ public class LoadDataStage extends AbstractDistStage {
                break;
             } catch (Exception e) {
                log.warn("Failed to insert entry into cache", e);
+            } finally {
+               threadSleep();
             }
          }
          if (!inserted) {
@@ -300,6 +317,8 @@ public class LoadDataStage extends AbstractDistStage {
                }
                restartTx();
                return true;
+            } finally {
+               threadSleep();
             }
          }
          if (txCurrentSize >= transactionSize || keyId < 0) {
@@ -348,6 +367,16 @@ public class LoadDataStage extends AbstractDistStage {
       long totalSize = sizeSum.addAndGet(size);
       if (prevEntryCount / logPeriod < currentEntryCount / logPeriod) {
          log.infof("This node loaded %d entries (~%d bytes)", currentEntryCount, totalSize);
+      }
+   }
+
+   private void threadSleep() {
+      if (delayBetweenRequests > 0) {
+         try {
+            Thread.sleep(delayBetweenRequests);
+         } catch (InterruptedException e) {
+            log.error(String.format("Exception while invoking sleep() on thread %d.", Thread.currentThread().getId()), e);
+         }
       }
    }
 

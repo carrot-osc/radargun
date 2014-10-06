@@ -97,6 +97,7 @@ public class CheckCacheDataStage extends AbstractDistStage {
    private boolean checkSubpartsAreReplicas = false;
 
    private transient KeyGenerator keyGenerator;
+   private transient ValueGenerator valueGenerator;
 
    @InjectTrait(dependency = InjectTrait.Dependency.MANDATORY)
    protected BasicOperations basicOperations;
@@ -124,6 +125,7 @@ public class CheckCacheDataStage extends AbstractDistStage {
          if (keyGenerator == null) {
             keyGenerator = new StringKeyGenerator();
          }
+         valueGenerator = (ValueGenerator) slaveState.get(ValueGenerator.VALUE_GENERATOR);
          CheckResult result = new CheckResult();
          if (memoryOnly && inMemoryBasicOperations != null) {
             basicCache = inMemoryBasicOperations.getMemoryOnlyCache(getCacheName());
@@ -138,7 +140,7 @@ public class CheckCacheDataStage extends AbstractDistStage {
             if (checkThreads <= 1) {
                ValueChecker checker = new GeneratedValueChecker((ValueGenerator) slaveState.get(ValueGenerator.VALUE_GENERATOR));
                int entriesToCheck = numEntries;
-               for (int i = firstEntryOffset * slaveState.getSlaveIndex(); entriesToCheck > 0; i += stepEntryCount) {
+               for (int i = firstEntryOffset; entriesToCheck > 0; i += stepEntryCount) {
                   int checkAmount = Math.min(checkEntryCount, entriesToCheck);
                   for (int j = 0; j < checkAmount; ++j) {
                      if (!checkKey(basicCache, debugableCache, i + j, result, checker)) {
@@ -222,7 +224,7 @@ public class CheckCacheDataStage extends AbstractDistStage {
             ValueChecker checker = new GeneratedValueChecker((ValueGenerator) slaveState.get(ValueGenerator.VALUE_GENERATOR));
             String bucketId = getCacheName();
             int entriesToCheck = to - from;
-            for (int i = from * (stepEntryCount / checkEntryCount) + firstEntryOffset * slaveState.getSlaveIndex(); entriesToCheck > 0; i += stepEntryCount) {
+            for (int i = from * (stepEntryCount / checkEntryCount) + firstEntryOffset; entriesToCheck > 0; i += stepEntryCount) {
                int checkAmount = Math.min(checkEntryCount, entriesToCheck);
                for (int j = 0; j < checkAmount; ++j) {
                   if (!checkKey(basicCache, debugableCache, i + j, result, checker)) {
