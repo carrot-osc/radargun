@@ -46,6 +46,10 @@ public class HistogramChart extends Chart {
       }
       left = histogram.ranges[0];
       right = histogram.ranges[histogram.ranges.length - 1];
+      // handle situation where range contains only one value
+      if (left == right) {
+         right++;
+      }
 
       for (int i = 0; i < histogram.counts.length; i++) {
          series.add(histogram.ranges[i], (double) histogram.counts[i] / totalCount);
@@ -60,7 +64,11 @@ public class HistogramChart extends Chart {
                                                        PlotOrientation.VERTICAL, false, false, false);
       XYPlot plot = (XYPlot) chart.getPlot();
       HistogramLogAxis xAxis = new HistogramLogAxis("Response time");
-      xAxis.setRange(left, right);
+      try {
+         xAxis.setRange(left, right);
+      } catch (Exception e) {
+         System.out.println("ok");
+      }
       plot.setDomainAxis(xAxis);
       return chart;
    }
