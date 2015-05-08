@@ -60,7 +60,7 @@ public class JMXInvocationStage extends AbstractDistStage {
 
    @Override
    public DistStageAck executeOnSlave() {
-      if (!shouldExecute()) {
+      if (!shouldExecute() || !isServiceRunning()) {
          return successfulResponse();
       }
       if (methodParameters.size() != methodSignatures.length) {

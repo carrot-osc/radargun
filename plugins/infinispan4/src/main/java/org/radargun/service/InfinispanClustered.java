@@ -31,7 +31,7 @@ public class InfinispanClustered implements Clustered {
 
    @Override
    public boolean isCoordinator() {
-      return service.cacheManager.isCoordinator();
+      return service.lifecycle.isRunning() && service.cacheManager.isCoordinator();
    }
 
    @ViewChanged
