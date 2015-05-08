@@ -25,6 +25,12 @@ public interface TopologyHistory {
    List<Event> getRehashHistory(String containerName);
 
    /**
+    * @return Ordered list of events when the status of partitions was changing
+    * @param containerName
+    */
+   List<Event> getPartitionStatusHistory(String containerName);
+
+   /**
     * Topology event is a period of time
     */
    abstract class Event {
