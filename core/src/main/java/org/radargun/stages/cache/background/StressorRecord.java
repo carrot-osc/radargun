@@ -63,7 +63,7 @@ public class StressorRecord {
    }
 
    public Object getLastConfirmedOperationId() {
-      return confirmations.isEmpty() ? -1 : confirmations.get(confirmations.size() - 1);
+      return confirmations.isEmpty() ? -1 : confirmations.get(confirmations.size() - 1).operationId;
    }
 
    public int getThreadId() {
@@ -154,6 +154,9 @@ public class StressorRecord {
                return;
             }
          }
+         if (confirmations.isEmpty()) {
+            confirmations.add(new StressorConfirmation(operationId, timestamp));
+         }
       } finally {
          if (trace) {
             log.tracef("Confirmations for thread %d are %s", threadId, confirmations);
@@ -180,6 +183,14 @@ public class StressorRecord {
       public StressorConfirmation(long operationId, long timestamp) {
          this.operationId = operationId;
          this.timestamp = timestamp;
+      }
+
+      @Override
+      public String toString() {
+         return "StressorConfirmation{" +
+               "operationId=" + operationId +
+               ", timestamp=" + timestamp +
+               '}';
       }
    }
 }

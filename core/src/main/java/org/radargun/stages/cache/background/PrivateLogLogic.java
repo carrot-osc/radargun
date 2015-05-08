@@ -3,7 +3,9 @@ package org.radargun.stages.cache.background;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Map;
+import java.util.Set;
 
 import org.radargun.Operation;
 import org.radargun.stages.helpers.Range;
@@ -31,6 +33,7 @@ class PrivateLogLogic extends AbstractLogLogic<PrivateLogValue> {
    // Keys modified during current transaction, should be recorded to timestamps when
    // the transaction is committed
    private final Collection<KeyOperationPair> txModifications = new ArrayList<>(Math.max(0, transactionSize));
+   private final Set<Long> txModificationsKeyIds = new HashSet<>(Math.max(0, transactionSize));
 
    PrivateLogLogic(BackgroundOpsManager manager, Range range) {
       super(manager, range);
@@ -48,9 +51,10 @@ class PrivateLogLogic extends AbstractLogLogic<PrivateLogValue> {
          if (prevValue == null || !prevValue.contains(prevOperation.operationId)) {
             // non-cleaned old value or stale read, try backup
             backupValue = checkedGetValue(~keyId);
-            if (backupValue == null || !backupValue.contains(prevOperation.operationId)) {
+            // Modifying the same key within a single transaction may cause false stale reads, avoid it by checking txModificationsKeyIds
+            if ((backupValue == null || !backupValue.contains(prevOperation.operationId)) && !txModificationsKeyIds.contains(keyId)) {
                // definitely stale read
-               log.trace("Detected stale read, keyId: " + keyId);
+               log.debugf("Detected stale read, keyId=%s, previousValue=%s, complementValue=%s", keyGenerator.generateKey(keyId), prevValue, backupValue);
                waitForStaleRead(prevOperation.timestamp);
                return false;
             } else {
@@ -97,10 +101,11 @@ class PrivateLogLogic extends AbstractLogLogic<PrivateLogValue> {
 
       if (transactionSize > 0) {
          txModifications.add(new KeyOperationPair(keyId, operationId));
+         txModificationsKeyIds.add(keyId);
       } else {
          long now = System.currentTimeMillis();
          timestamps.put(keyId, new OperationTimestampPair(operationId, now));
-         log.tracef("Operation %d on %08X finished at %d", operationId, keyId, now);
+         log.tracef("Operation %d on %08X finished at %d.", operationId, keyId, now);
       }
       return true;
    }
@@ -114,7 +119,7 @@ class PrivateLogLogic extends AbstractLogLogic<PrivateLogValue> {
             Thread.sleep(5000);
          }
       } else {
-         manager.getStressorRecordPool().reportStaleRead();
+         manager.getFailureHolder().reportStaleRead();
          stressor.requestTerminate();
       }
    }
@@ -123,17 +128,22 @@ class PrivateLogLogic extends AbstractLogLogic<PrivateLogValue> {
    protected void afterRollback() {
       super.afterRollback();
       txModifications.clear();
+      txModificationsKeyIds.clear();
    }
 
    @Override
-   protected void afterCommit() {
-      super.afterCommit();
-      long now = System.currentTimeMillis();
-      for (KeyOperationPair pair : txModifications) {
-         timestamps.put(pair.keyId, new OperationTimestampPair(pair.operationId, now));
-         log.tracef("Operation %d on %08X finished at %d", pair.operationId, pair.keyId, now);
+   protected boolean afterCommit() {
+      boolean result = super.afterCommit();
+      if (result) {
+         long now = System.currentTimeMillis();
+         for (KeyOperationPair pair : txModifications) {
+            timestamps.put(pair.keyId, new OperationTimestampPair(pair.operationId, now));
+            log.tracef("Operation %d on %08X finished at %d", pair.operationId, pair.keyId, now);
+         }
       }
       txModifications.clear();
+      txModificationsKeyIds.clear();
+      return result;
    }
 
    private PrivateLogValue getNextValue(PrivateLogValue prevValue) throws InterruptedException, BreakTxRequest {
@@ -144,15 +154,18 @@ class PrivateLogLogic extends AbstractLogLogic<PrivateLogValue> {
             if (stressor.isInterrupted() || stressor.isTerminated()) {
                return null;
             }
-            long minReadOperationId;
+            long minCheckedOperation;
             try {
-               minReadOperationId = getCheckedOperation(stressor.id, prevValue.getOperationId(0));
+               minCheckedOperation = getCheckedOperation(stressor.id, prevValue.getOperationId(0));
             } catch (StressorException e) {
                return null;
             }
-            if (prevValue.getOperationId(0) <= minReadOperationId) {
-               for (checkedValues = 1; checkedValues < prevValue.size() && prevValue.getOperationId(checkedValues) <= minReadOperationId; ++checkedValues) {
-                  log.tracef("Discarding operation %d (minReadOperationId is %d)", prevValue.getOperationId(checkedValues), minReadOperationId);
+            /**
+             * If maximum size of a log value is attained, we trim all operations, which have already been checked by log checkers.
+             */
+            if (prevValue.getOperationId(0) <= minCheckedOperation) {
+               for (checkedValues = 1; checkedValues < prevValue.size() && prevValue.getOperationId(checkedValues) <= minCheckedOperation; ++checkedValues) {
+                  log.tracef("Discarding operation %d (minimum of checked operations is %d).", prevValue.getOperationId(checkedValues), minCheckedOperation);
                }
                break;
             } else {
