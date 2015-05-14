@@ -42,12 +42,12 @@ public abstract class ReportDocument extends HtmlDocument {
    private int elementCounter = 0;
    private ArrayList<Future> chartTaskFutures = new ArrayList<>();
 
-   protected final int maxConfigurations;
-   protected final int maxIterations;
-   protected final int maxClusters;
+   public final int maxConfigurations;
+   public final int maxIterations;
+   public final int maxClusters;
 
-   protected final Configuration configuration;
-   protected final String testName;
+   public final Configuration configuration;
+   public final String testName;
 
    public ReportDocument(String targetDir, String testName, int maxConfigurations, int maxClusters, int maxIterations, Configuration configuration) {
       super(targetDir, String.format("test_%s.html", testName), "Test " + testName);

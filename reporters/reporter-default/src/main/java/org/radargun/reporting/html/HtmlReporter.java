@@ -2,10 +2,17 @@ package org.radargun.reporting.html;
 
 import java.io.File;
 import java.io.IOException;
+import java.io.PrintWriter;
 import java.util.*;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
+import freemarker.cache.ClassTemplateLoader;
+import freemarker.template.DefaultObjectWrapper;
+import freemarker.template.Template;
+import freemarker.template.TemplateException;
+import freemarker.template.TemplateHashModel;
+import freemarker.template.TemplateModelException;
 import org.radargun.config.Configuration;
 import org.radargun.config.Property;
 import org.radargun.config.PropertyDelegate;
@@ -37,14 +44,20 @@ public class HtmlReporter implements Reporter {
    @PropertyDelegate(prefix = "timeline.")
    private TimelineDocument.Configuration timelineConfig = new TimelineDocument.Configuration();
 
+   private Set<String> allTests = new LinkedHashSet<>();
+   private Collection<Report> reports;
+
    @Override
    public void run(Collection<Report> reports) {
+      this.reports = reports;
       Set<String> allTests = new LinkedHashSet<>();
       Set<String> combinedTests = new LinkedHashSet<>();
       Map<String, List<Report.Test>> testsByName = new HashMap<String, List<Report.Test>>();
 
       resolveCombinedTests(allTests, combinedTests);
       resolveTestsByName(reports, allTests, combinedTests, testsByName);
+
+      this.allTests = allTests;
 
       writeIndexDocument(reports, allTests);
       writeTimelineDocuments(reports);
@@ -189,5 +202,37 @@ public class HtmlReporter implements Reporter {
       } finally {
          index.close();
       }
+      freemarker.template.Configuration cfg = new freemarker.template.Configuration();
+      cfg.setTemplateLoader(new ClassTemplateLoader(HtmlReporter.class, "/html/templates"));
+      DefaultObjectWrapper bw = (DefaultObjectWrapper) cfg.getObjectWrapper();
+      bw.setExposeFields(true);
+      TemplateHashModel staticModels = bw.getStaticModels();
+      TemplateHashModel system = null;
+      try {
+         system = (TemplateHashModel) staticModels.get("java.lang.System");
+      } catch (TemplateModelException e) {
+         log.error("Templating exception", e);
+      }
+      cfg.setObjectWrapper(bw);
+      try {
+         Template indexTemplate = cfg.getTemplate("index.ftl");
+         PrintWriter printWriter = new PrintWriter(targetDir + File.separator + "index_test.html");
+         Map root = new HashMap();
+         root.put("reporter", this);
+         root.put("indexDocument", index);
+         root.put("System", system);
+         indexTemplate.process(root, printWriter);
+         printWriter.close();
+      } catch (Exception e) {
+         log.error("Templating exception", e);
+      }
+   }
+
+   public Set<String> getAllTests() {
+      return allTests;
+   }
+
+   public Collection<Report> getReports() {
+      return reports;
    }
 }

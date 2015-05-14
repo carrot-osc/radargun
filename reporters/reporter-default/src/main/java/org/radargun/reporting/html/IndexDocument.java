@@ -7,6 +7,7 @@ import java.io.IOException;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Date;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -33,6 +34,7 @@ public class IndexDocument extends HtmlDocument {
    private static final Log log = LogFactory.getLog(IndexDocument.class);
 
    private int elementCounter = 0;
+   private Map<Report, Set<OriginalConfig>> configs = new HashMap<>();
 
    public IndexDocument(String directory) {
       super(directory, "index.html", "RadarGun benchmark");
@@ -100,7 +102,7 @@ public class IndexDocument extends HtmlDocument {
       }
    }
 
-   private static class OriginalConfig {
+   public static class OriginalConfig {
       private Set<Integer> slaves = new HashSet<>();
       private String filename;
       private byte[] content;
@@ -109,6 +111,18 @@ public class IndexDocument extends HtmlDocument {
          slaves.add(slave);
          this.filename = filename;
          this.content = content;
+      }
+
+      public Set<Integer> getSlaves() {
+         return slaves;
+      }
+
+      public String getFilename() {
+         return filename;
+      }
+
+      public byte[] getContent() {
+         return content;
       }
    }
 
@@ -122,6 +136,7 @@ public class IndexDocument extends HtmlDocument {
             }
          }
       }
+      this.configs.put(report, configs);
       String file = String.valueOf(setup.getProperties().get(Service.FILE));
       if (configs.size() == 0) {
          write("<li>Configuration file: " + file + "</li>\n");
@@ -284,5 +299,9 @@ public class IndexDocument extends HtmlDocument {
             System.getProperty("java.vm.name") + " (" + System.getProperty("java.vm.version") + ", " +
             System.getProperty("java.vm.vendor") + ") OS: " + System.getProperty("os.name") + " (" +
             System.getProperty("os.version") + ", " + System.getProperty("os.arch") + ")");
+   }
+
+   public Set<OriginalConfig> getConfigs(Report report) {
+      return configs.get(report);
    }
 }
