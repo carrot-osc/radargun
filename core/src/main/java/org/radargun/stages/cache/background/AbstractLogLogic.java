@@ -101,7 +101,7 @@ abstract class AbstractLogLogic<ValueType> extends AbstractLogic {
             txFailedAttempts++;
             log.tracef("Transaction rollbacked, number of attempts so far=%d", ongoingTx, txFailedAttempts);
             if (manager.getLogLogicConfiguration().getMaxTransactionAttempts() >= 0
-                  && txFailedAttempts >= manager.getLogLogicConfiguration().getMaxTransactionAttempts()) {
+                  && txFailedAttempts > manager.getLogLogicConfiguration().getMaxTransactionAttempts()) {
                log.error("Maximum number of transaction attempts attained, reporting.");
                manager.getFailureManager().reportFailedTransactionAttempt();
             }
@@ -136,11 +136,8 @@ abstract class AbstractLogLogic<ValueType> extends AbstractLogic {
             startTransaction();
          }
 
-         boolean txBreakRequest = false;
-         try {
-            if (!invokeLogic(keyId)) return false;
-         } catch (BreakTxRequest request) {
-            txBreakRequest = true;
+         if (!invokeLogic(keyId)) {
+            return false;
          }
          lastSuccessfulOpTimestamp = System.currentTimeMillis();
 
@@ -152,7 +149,7 @@ abstract class AbstractLogLogic<ValueType> extends AbstractLogic {
 
          if (transactionSize > 0) {
             remainingTxOps--;
-            if (remainingTxOps <= 0 || txBreakRequest) {
+            if (remainingTxOps <= 0) {
                try {
                   ongoingTx.commit();
                   lastSuccessfulTxTimestamp = System.currentTimeMillis();
@@ -177,10 +174,6 @@ abstract class AbstractLogLogic<ValueType> extends AbstractLogic {
                if (stressor.isTerminated()) {
                   // the removes may have failed and we have not repeated them due to termination
                   log.debugf("Stressor %s is about to terminate, not writing the last operation %d", stressor.getStatus(), operationId);
-                  return false;
-               }
-               if (txBreakRequest) {
-                  log.debugf("Transaction was committed sooner, retrying operation %d", operationId);
                   return false;
                }
 
@@ -234,6 +227,7 @@ abstract class AbstractLogLogic<ValueType> extends AbstractLogic {
       try {
          int delayedRemoveAttempts = 0;
          while (!stressor.isTerminated()) {
+            boolean delayedRemoveError = false;
             try {
                if (ongoingTx != null) {
                   try {
@@ -257,6 +251,7 @@ abstract class AbstractLogLogic<ValueType> extends AbstractLogic {
                      if (manager.getLogLogicConfiguration().getMaxDelayedRemoveAttempts() >= 0) {
                         delayedRemoveAttempts++;
                      }
+                     delayedRemoveError = true;
                      throw e;
                   }
                }
@@ -265,10 +260,13 @@ abstract class AbstractLogLogic<ValueType> extends AbstractLogic {
                delayedRemoves.clear();
                return true;
             } catch (Exception e) {
-               if (manager.getLogLogicConfiguration().getMaxDelayedRemoveAttempts() >= 0) {
+               // Record exceptions not originating from checkedRemoveValue (e.g. tx.commit)
+               if (!delayedRemoveError && manager.getLogLogicConfiguration().getMaxDelayedRemoveAttempts() >= 0) {
                   delayedRemoveAttempts++;
                }
                log.error("Error while executing delayed removes.", e);
+            } finally {
+               delayedRemoveError = false;
             }
          }
       } finally {
@@ -300,7 +298,7 @@ abstract class AbstractLogLogic<ValueType> extends AbstractLogic {
 
    protected abstract boolean checkedRemoveValue(long keyId, ValueType oldValue) throws Exception;
 
-   private void writeStressorLastOperation() {
+   protected void writeStressorLastOperation() {
       try {
          // we have to write down the keySelectorRandom as well in order to be able to continue work if this slave
          // is restarted
@@ -316,7 +314,7 @@ abstract class AbstractLogLogic<ValueType> extends AbstractLogic {
    /**
     * Returns minimum of checked (confirmed) operations for given stressor thread across all nodes.
     */
-   protected long getCheckedOperation(int stressorId, long operationId) throws StressorException, BreakTxRequest {
+   protected long getCheckedOperation(int stressorId, long operationId) throws StressorException {
       long minCheckedOperation = Long.MAX_VALUE;
       for (int i = 0; i < manager.getSlaveState().getGroupSize(); ++i) {
          long lastCheckedOperationId = Long.MIN_VALUE;
@@ -329,27 +327,24 @@ abstract class AbstractLogLogic<ValueType> extends AbstractLogic {
             log.errorf(e, "Cannot read last checked operation id for slave %d, stressor %d", i, stressorId);
             throw new StressorException(e);
          }
-         if (lastCheckedOperationId < operationId && manager.getLogLogicConfiguration().isIgnoreDeadCheckers() && !manager.isSlaveAlive(i)) {
+         if (lastCheckedOperationId > Long.MIN_VALUE && lastCheckedOperationId < operationId && manager.getLogLogicConfiguration().isIgnoreDeadCheckers() && !manager.isSlaveAlive(i)) {
             try {
                Long ignoredOperationId = (Long) basicCache.get(LogChecker.ignoredKey(i, stressorId));
                if (ignoredOperationId == null || ignoredOperationId < operationId) {
                   log.tracef("Setting ignore operation for checker slave %d and stressor %d: %d -> %d (last checked operation %d)",
                              i, stressorId, ignoredOperationId, operationId, lastCheckedOperationId);
                   basicCache.put(LogChecker.ignoredKey(i, stressorId), operationId);
-                  if (transactionSize > 0) {
-                     throw new BreakTxRequest();
-                  }
                }
-               minCheckedOperation = Math.min(minCheckedOperation, operationId);
-            } catch (BreakTxRequest request) {
-               throw request;
             } catch (Exception e) {
-               log.errorf(e, "Cannot overwrite last checked operation id for slave %d", "stressor %d", i, stressorId);
+               log.errorf(e, "Cannot overwrite ignored operation id for slave %d", "stressor %d", i, stressorId);
                throw new StressorException(e);
             }
          } else {
             minCheckedOperation = Math.min(minCheckedOperation, lastCheckedOperationId);
          }
+      }
+      if (minCheckedOperation == Long.MAX_VALUE) {
+         return Long.MIN_VALUE;
       }
       return minCheckedOperation;
    }

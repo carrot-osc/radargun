@@ -73,7 +73,7 @@ class SharedLogLogic extends AbstractLogLogic<SharedLogValue> {
       return true;
    }
 
-   private SharedLogValue getNextValue(SharedLogValue prevValue, SharedLogValue backupValue) throws StressorException, BreakTxRequest {
+   private SharedLogValue getNextValue(SharedLogValue prevValue, SharedLogValue backupValue) throws StressorException {
       if (prevValue == null && backupValue == null) {
          return new SharedLogValue(stressor.id, operationId);
       } else if (prevValue != null && backupValue != null) {
@@ -92,7 +92,7 @@ class SharedLogLogic extends AbstractLogLogic<SharedLogValue> {
       }
    }
 
-   private SharedLogValue filterAndAddOperation(SharedLogValue value) throws StressorException, BreakTxRequest {
+   private SharedLogValue filterAndAddOperation(SharedLogValue value) throws StressorException {
       Map<Integer, Long> operationIds = getCheckedOperations(value.minFrom(stressor.id));
       SharedLogValue filtered = value.with(stressor.id, operationId, operationIds);
       if (filtered.size() > manager.getLogLogicConfiguration().getValueMaxSize()) {
@@ -102,7 +102,7 @@ class SharedLogLogic extends AbstractLogLogic<SharedLogValue> {
       }
    }
 
-   protected Map<Integer, Long> getCheckedOperations(long operationId) throws StressorException, BreakTxRequest {
+   protected Map<Integer, Long> getCheckedOperations(long operationId) throws StressorException {
       Map<Integer, Long> minCheckedOperations = new HashMap<>();
       for (int stressorId = 0; stressorId < manager.getGeneralConfiguration().getNumThreads() * manager.getSlaveState().getGroupSize(); ++stressorId) {
          minCheckedOperations.put(stressorId, getCheckedOperation(stressorId, operationId));
