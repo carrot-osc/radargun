@@ -4,6 +4,7 @@ import java.util.List;
 import java.util.Random;
 
 import org.radargun.Operation;
+import org.radargun.stages.cache.generators.ValueGenerator;
 import org.radargun.stages.helpers.Range;
 import org.radargun.traits.BasicOperations;
 import org.radargun.traits.ConditionalOperations;
@@ -33,6 +34,7 @@ class LegacyLogic extends AbstractLogic {
    private int remainingTxOps;
    private boolean loaded;
    private long transactionStart;
+   private ValueGenerator valueGenerator;
 
    LegacyLogic(BackgroundOpsManager manager, Range range, List<Range> deadSlavesRanges, boolean loaded) {
       super(manager);
@@ -48,9 +50,10 @@ class LegacyLogic extends AbstractLogic {
       this.deadSlavesRanges = deadSlavesRanges;
       this.loadOnly = manager.getLegacyLogicConfiguration().isLoadOnly();
       this.putWithReplace = manager.getLegacyLogicConfiguration().isPutWithReplace();
+      this.valueGenerator = manager.getLegacyLogicConfiguration().getValueGenerator();
       this.loaded = loaded;
-      currentKey = range.getStart();
-      remainingTxOps = transactionSize;
+      this.currentKey = range.getStart();
+      this.remainingTxOps = transactionSize;
    }
 
    public void loadData() {
@@ -68,15 +71,15 @@ class LegacyLogic extends AbstractLogic {
       int loaded_keys = 0;
       boolean loadWithPutIfAbsent = manager.getLegacyLogicConfiguration().isLoadWithPutIfAbsent();
       int entrySize = manager.getLegacyLogicConfiguration().getEntrySize();
-      Random rand = new Random();
       for (long keyId = from; keyId < to && !stressor.isTerminated(); keyId++, loaded_keys++) {
          while (!stressor.isTerminated()) {
             try {
                Object key = keyGenerator.generateKey(keyId);
+               Object value = valueGenerator.generateValue(keyId, entrySize, rand);
                if (loadWithPutIfAbsent) {
-                  nonTxConditionalCache.putIfAbsent(key, generateRandomEntry(rand, entrySize));
+                  nonTxConditionalCache.putIfAbsent(key, value);
                } else {
-                  nonTxBasicCache.put(key, generateRandomEntry(rand, entrySize));
+                  nonTxBasicCache.put(key, value);
                }
                if (loaded_keys % 1000 == 0) {
                   log.debug("Loaded " + loaded_keys + " out of " + (to - from));
@@ -131,10 +134,12 @@ class LegacyLogic extends AbstractLogic {
             result = basicCache.get(key);
             if (result == null) operation = GET_NULL;
          } else if (operation == BasicOperations.PUT) {
+            int entrySize = manager.getLegacyLogicConfiguration().getEntrySize();
+            Object value = valueGenerator.generateValue(key, entrySize, rand);
             if (putWithReplace) {
-               conditionalCache.replace(key, generateRandomEntry(rand, manager.getLegacyLogicConfiguration().getEntrySize()));
+               conditionalCache.replace(key, value);
             } else {
-               basicCache.put(key, generateRandomEntry(rand, manager.getLegacyLogicConfiguration().getEntrySize()));
+               basicCache.put(key, value);
             }
          } else if (operation == BasicOperations.REMOVE) {
             basicCache.remove(key);
@@ -189,13 +194,6 @@ class LegacyLogic extends AbstractLogic {
       ongoingTx = null;
       basicCache = null;
       conditionalCache = null;
-   }
-
-   private byte[] generateRandomEntry(Random rand, int size) {
-      // each char is 2 bytes
-      byte[] data = new byte[size];
-      rand.nextBytes(data);
-      return data;
    }
 
    @Override
