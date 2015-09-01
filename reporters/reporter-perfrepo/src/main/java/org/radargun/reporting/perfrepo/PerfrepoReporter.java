@@ -152,17 +152,19 @@ public class PerfrepoReporter implements Reporter {
       }
       for (Map.Entry<Integer, List<Statistics>> slaveStats : iteration.getStatistics()) {
          Statistics statistics = mergeStatistics(slaveStats.getValue());
-         if (aggregatedStatistics == null) {
-            aggregatedStatistics = statistics.copy();
-         } else {
-            aggregatedStatistics.merge(statistics);
-         }
-         for (Map.Entry<MetricNameMapping, List<Double>> entry : mrdMapping.entrySet()) {
-            MetricNameMapping mapping = entry.getKey();
-            long duration = TimeUnit.MILLISECONDS.toNanos(statistics.getEnd() - statistics.getBegin());
-            OperationStats operationStats = statistics.getOperationsStats().get(mapping.operation);
-            double value = mapping.representation.getValue(operationStats, duration);
-            entry.getValue().add(value);
+         if (statistics != null) {
+            if (aggregatedStatistics == null) {
+               aggregatedStatistics = statistics.copy();
+            } else {
+               aggregatedStatistics.merge(statistics);
+            }
+            for (Map.Entry<MetricNameMapping, List<Double>> entry : mrdMapping.entrySet()) {
+               MetricNameMapping mapping = entry.getKey();
+               long duration = TimeUnit.MILLISECONDS.toNanos(statistics.getEnd() - statistics.getBegin());
+               OperationStats operationStats = statistics.getOperationsStats().get(mapping.operation);
+               double value = mapping.representation.getValue(operationStats, duration);
+               entry.getValue().add(value);
+            }
          }
       }
       if (aggregatedStatistics != null) {
