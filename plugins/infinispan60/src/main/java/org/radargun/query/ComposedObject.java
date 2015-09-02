@@ -59,7 +59,7 @@ public class ComposedObject implements Serializable {
 
    public static class Marshaller implements MessageMarshaller<ComposedObject> {
 
-      private static final String NAME = "query.ComposedObject";
+      private static final String NAME = ComposedObject.class.getName();
 
       @Override
       public ComposedObject readFrom(ProtoStreamReader reader) throws IOException {
