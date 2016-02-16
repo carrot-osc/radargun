@@ -129,6 +129,11 @@ public class DefaultStatistics extends IntervalStatistics {
       return operationStatsMap;
    }
 
+//   @Override
+//   public OperationStats getOperationStatsByOperation(String operation) {
+//
+//   }
+
    @Override
    public <T> T[] getRepresentations(Class<T> clazz, Object... args) {
       T[] representations = (T[]) Array.newInstance(clazz, operationStats.length);

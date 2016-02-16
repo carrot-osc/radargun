@@ -185,7 +185,7 @@ public class TimelineDocument extends HtmlDocument {
          try {
             f.get();
          } catch (Exception e) {
-            log.error("Failed to generate on of the charts: ", e);
+            log.error("Failed to generate one of the charts: ", e);
          }
       }
 

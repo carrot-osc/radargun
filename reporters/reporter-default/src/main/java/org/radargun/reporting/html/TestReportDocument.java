@@ -46,6 +46,20 @@ public class TestReportDocument extends ReportDocument {
    public void writeTest() throws IOException {
       writeTag("h1", "Test " + testName);
 
+      writeTag("h2", "Total throughput");
+      for (String operation : testAggregations.getAllOperations()) {
+         writeTag("h2", operation);
+         if (maxClusters > 1 && configuration.separateClusterCharts) {
+            for (Integer clusterSize : testAggregations.byClusterSize().keySet()) {
+               createAndWriteCharts(operation, clusterSize);
+            }
+         } else {
+            createAndWriteCharts(operation, 0);
+         }
+         writeOperation(operation, testAggregations.byReports(), testName);
+      }
+
+
       for (Map.Entry<String, Map<Report, List<Report.TestResult>>> result : testAggregations.results().entrySet()) {
          writeTag("h2", result.getKey());
          writeResult(result.getValue());

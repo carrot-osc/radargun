@@ -74,6 +74,11 @@ public interface Statistics extends Serializable {
     * @return Map of operations stats keyed by operations names.
     */
    Map<String, OperationStats> getOperationsStats();
+//
+//   /**
+//    * @return Merged stats for given operation
+//    */
+//   OperationStats getOperationStatsByOperation(String operation);
 
    /* Util method, execute only on the same node */
 
