@@ -150,10 +150,12 @@ public class RandomDataStage extends AbstractDistStage {
              * Intern the string to reduce memory usage since these words will be used multiple
              * times
              */
-            words[i - 1][j] = new String(generateRandomUniqueWord(i, false)).intern();
+            words[i - 1][j] = generateRandomUniqueWord(i, false).intern();
          }
       }
-      log.trace("Slave" + slaveState.getSlaveIndex() + " words array = " + Arrays.deepToString(words));
+      if (log.isTraceEnabled()) {
+         log.trace("Slave" + slaveState.getSlaveIndex() + " words array = " + Arrays.deepToString(words));
+      }
    }
 
    @Override
@@ -406,23 +408,24 @@ public class RandomDataStage extends AbstractDistStage {
    private String generateRandomUniqueWord(int maxLength, boolean randomLength) {
       String singleByteChars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";
       String multiByteChars = "ÅÄÇÉÑÖÕÜàäâáãçëèêéîïìíñôöòóüûùúÿ";
-      StringBuilder data = new StringBuilder();
 
       int wordLength = maxLength;
       if (randomLength && maxLength - 1 > 0) {
          wordLength = random.nextInt(maxLength - 1) + 1;
       }
 
-      for (int i = wordLength; i > 0; i--) {
+      char[] data = new char[wordLength];
+
+      for (int i = 0; i < wordLength; i++) {
          // If wordLength == 1, then only use singleByteChars
          if (wordLength > 1 && random.nextBoolean()) {
-            data.append(multiByteChars.charAt(random.nextInt(multiByteChars.length() - 1)));
+            data[i] = multiByteChars.charAt(random.nextInt(multiByteChars.length() - 1));
          } else {
-            data.append(singleByteChars.charAt(random.nextInt(singleByteChars.length() - 1)));
+            data[i] = singleByteChars.charAt(random.nextInt(singleByteChars.length() - 1));
          }
       }
 
-      return data.toString();
+      return String.valueOf(data);
    }
 
    @Override
